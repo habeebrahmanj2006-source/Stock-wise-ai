@@ -1,0 +1,1137 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Search, TrendingUp, TrendingDown, AlertCircle, Activity, BarChart3, 
+  ShieldCheck, Info, Loader2, ArrowRight, RefreshCw, Sparkles, Zap, 
+  Shield, Target, Globe, MessageSquare, PieChart, LineChart, 
+  Lock, User, Mail, Key, Fingerprint, ScanFace, Settings, 
+  LogOut, Trash2, Bell, Languages, Star, Heart, Eye, ChevronRight,
+  Plus, X, Check, Smartphone, Moon, Sun
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  analyzeStock, getTopPicks, askAI, getChartData, getMarketOverview, getSectorStrength, getMarketMovers, getMarketMood,
+  StockAnalysis, StockPick, ChartDataPoint, MarketIndex, SectorPerformance, MarketMovers, MarketMood 
+} from './services/geminiService';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+import { 
+  LineChart as RechartsLineChart, Line, XAxis, YAxis, 
+  CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area 
+} from 'recharts';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
+
+// --- Types ---
+type View = 'WELCOME' | 'AUTH' | 'DASHBOARD';
+type AuthMode = 'LOGIN' | 'SIGNUP';
+type DashboardTab = 'SEARCH' | 'WATCHLIST' | 'SETTINGS';
+
+interface ChatMessage {
+  role: 'user' | 'ai';
+  content: string;
+}
+
+interface UserSettings {
+  name: string;
+  email: string;
+  theme: 'dark' | 'light';
+  language: string;
+  notifications: boolean;
+}
+
+// --- Components ---
+
+const WelcomeScreen = ({ onNext }: { onNext: () => void }) => (
+  <motion.div 
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    className="fixed inset-0 bg-brand-black flex flex-col items-center justify-center p-6 text-center z-50"
+  >
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] bg-brand-red-dark/10 blur-[120px] rounded-full"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-brand-red-bright/5 blur-[120px] rounded-full"></div>
+    </div>
+
+    <motion.div 
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: 'spring', damping: 15 }}
+      className="bg-brand-dark p-12 rounded-[3rem] border border-brand-red-bright/20 shadow-2xl relative z-10 max-w-lg w-full"
+    >
+      <div className="w-24 h-24 bg-brand-red-dark/20 rounded-3xl flex items-center justify-center mx-auto mb-8 text-brand-red-bright">
+        <Sparkles className="w-12 h-12" />
+      </div>
+      <h1 className="text-3xl font-display font-bold mb-6 text-white leading-tight">
+        Welcome to StockWise AI 🚀
+      </h1>
+      <p className="text-brand-grey-light text-lg mb-10 leading-relaxed font-light">
+        Congratulations! Your AI-powered stock analysis dashboard is ready.
+      </p>
+      <button 
+        onClick={onNext}
+        className="w-full py-5 red-gradient text-white rounded-2xl font-display font-bold uppercase tracking-widest text-sm hover:brightness-110 transition-all glow-red flex items-center justify-center gap-3"
+      >
+        Get Started <ArrowRight className="w-5 h-5" />
+      </button>
+    </motion.div>
+  </motion.div>
+);
+
+const AuthScreen = ({ onAuth }: { onAuth: (email: string) => void }) => {
+  const [mode, setMode] = useState<AuthMode>('LOGIN');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
+    onAuth(email);
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-brand-black flex flex-col items-center justify-center p-6 z-40"
+    >
+      <div className="leo-brand mb-12 scale-75 md:scale-100">
+        <span className="char-s">S</span>tockWise <span className="char-a">A</span>I
+      </div>
+
+      <motion.div 
+        layout
+        className="bg-brand-dark p-10 rounded-[2.5rem] border border-white/5 shadow-2xl w-full max-w-md"
+      >
+        <h2 className="text-2xl font-display font-bold mb-8 text-white text-center">
+          {mode === 'LOGIN' ? 'Secure Login' : 'Create Account'}
+        </h2>
+
+        {error && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 p-4 bg-brand-red-bright/10 border border-brand-red-bright/20 rounded-xl text-brand-red-bright text-xs font-bold text-center"
+          >
+            {error}
+          </motion.div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Email Address</label>
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-600" />
+              <input 
+                type="email" 
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                className="w-full h-14 pl-12 pr-6 bg-brand-black border border-white/10 rounded-2xl outline-none focus:border-brand-red-bright/50 transition-all text-white"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Password</label>
+            <div className="relative">
+              <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-600" />
+              <input 
+                type="password" 
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="w-full h-14 pl-12 pr-6 bg-brand-black border border-white/10 rounded-2xl outline-none focus:border-brand-red-bright/50 transition-all text-white"
+              />
+            </div>
+          </div>
+
+          <button 
+            type="submit"
+            className="w-full py-5 red-gradient text-white rounded-2xl font-display font-bold uppercase tracking-widest text-xs hover:brightness-110 transition-all glow-red"
+          >
+            {mode === 'LOGIN' ? 'Sign In' : 'Sign Up'}
+          </button>
+        </form>
+
+        <div className="mt-8 text-center">
+          <button 
+            onClick={() => setMode(mode === 'LOGIN' ? 'SIGNUP' : 'LOGIN')}
+            className="text-xs text-brand-grey-light hover:text-brand-red-bright transition-colors"
+          >
+            {mode === 'LOGIN' ? "Don't have an account? Create one" : "Already have an account? Sign in"}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
+// --- Main App ---
+
+export default function App() {
+  const [view, setView] = useState<View>('WELCOME');
+  const [tab, setTab] = useState<DashboardTab>('SEARCH');
+  const [user, setUser] = useState<UserSettings | null>(null);
+  const [watchlist, setWatchlist] = useState<string[]>([]);
+  
+  // Dashboard Data
+  const [marketIndices, setMarketIndices] = useState<MarketIndex[]>([]);
+  const [topPicks, setTopPicks] = useState<StockPick[]>([]);
+  const [sectors, setSectors] = useState<SectorPerformance[]>([]);
+  const [marketMovers, setMarketMovers] = useState<MarketMovers | null>(null);
+  const [marketMood, setMarketMood] = useState<MarketMood | null>(null);
+  const [fetchingDashboard, setFetchingDashboard] = useState(false);
+
+  // Analysis State
+  const [symbol, setSymbol] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [analysis, setAnalysis] = useState<StockAnalysis | null>(null);
+  const [chartData, setChartData] = useState<ChartDataPoint[]>([]);
+  const [timeframe, setTimeframe] = useState('1M');
+  const [error, setError] = useState<string | null>(null);
+
+  // AI Assistant State
+  const [question, setQuestion] = useState('');
+  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
+  const [asking, setAsking] = useState(false);
+  const chatInputRef = useRef<HTMLInputElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Load Initial State
+  useEffect(() => {
+    const savedUser = localStorage.getItem('stockwise_user');
+    const savedWatchlist = localStorage.getItem('stockwise_watchlist');
+    const welcomeDone = localStorage.getItem('stockwise_welcome_done');
+
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+      setView('DASHBOARD');
+    } else if (welcomeDone) {
+      setView('AUTH');
+    } else {
+      setView('WELCOME');
+    }
+
+    if (savedWatchlist) {
+      setWatchlist(JSON.parse(savedWatchlist));
+    }
+
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    setFetchingDashboard(true);
+    try {
+      const [indices, picks, sectorData, movers, mood] = await Promise.all([
+        getMarketOverview(),
+        getTopPicks(),
+        getSectorStrength(),
+        getMarketMovers(),
+        getMarketMood()
+      ]);
+      setMarketIndices(indices);
+      setTopPicks(picks);
+      setSectors(sectorData);
+      setMarketMovers(movers);
+      setMarketMood(mood);
+    } catch (err) {
+      console.error("Dashboard fetch error:", err);
+    } finally {
+      setFetchingDashboard(false);
+    }
+  };
+
+  const handleWelcomeNext = () => {
+    localStorage.setItem('stockwise_welcome_done', 'true');
+    setView('AUTH');
+  };
+
+  const handleAuth = (email: string) => {
+    const newUser: UserSettings = {
+      name: email.split('@')[0],
+      email,
+      theme: 'dark',
+      language: 'English',
+      notifications: true
+    };
+    setUser(newUser);
+    localStorage.setItem('stockwise_user', JSON.stringify(newUser));
+    setView('DASHBOARD');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('stockwise_user');
+    setUser(null);
+    setView('AUTH');
+  };
+
+  const toggleWatchlist = (s: string) => {
+    const newWatchlist = watchlist.includes(s) 
+      ? watchlist.filter(item => item !== s)
+      : [...watchlist, s];
+    setWatchlist(newWatchlist);
+    localStorage.setItem('stockwise_watchlist', JSON.stringify(newWatchlist));
+  };
+
+  const handleSearch = async (e?: React.FormEvent, searchSymbol?: string) => {
+    if (e) e.preventDefault();
+    const finalSymbol = searchSymbol || symbol;
+    if (!finalSymbol.trim()) return;
+
+    setLoading(true);
+    setError(null);
+    setAnalysis(null);
+    setChartData([]);
+
+    try {
+      const [result, chart] = await Promise.all([
+        analyzeStock(finalSymbol),
+        getChartData(finalSymbol, timeframe)
+      ]);
+      setAnalysis(result);
+      setChartData(chart);
+      if (!searchSymbol) setSymbol(finalSymbol);
+      
+      setTimeout(() => {
+        document.getElementById('results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    } catch (err) {
+      setError('Could not retrieve analysis for this symbol. Please check the symbol and try again.');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleTimeframeChange = async (tf: string) => {
+    setTimeframe(tf);
+    if (analysis) {
+      const chart = await getChartData(symbol, tf);
+      setChartData(chart);
+    }
+  };
+
+  const handleAskAI = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const userQuestion = question.trim();
+    if (!userQuestion || asking) return;
+
+    const newUserMessage: ChatMessage = { role: 'user', content: userQuestion };
+    setChatHistory(prev => [...prev, newUserMessage]);
+    setQuestion('');
+    setAsking(true);
+
+    try {
+      const response = await askAI(userQuestion);
+      const newAiMessage: ChatMessage = { role: 'ai', content: response };
+      setChatHistory(prev => [...prev, newAiMessage]);
+    } catch (err) {
+      console.error(err);
+      const errorMessage: ChatMessage = { role: 'ai', content: "I'm sorry, I couldn't answer that right now." };
+      setChatHistory(prev => [...prev, errorMessage]);
+    } finally {
+      setAsking(false);
+      chatInputRef.current?.focus();
+    }
+  };
+
+  const clearChat = () => {
+    setChatHistory([]);
+    chatInputRef.current?.focus();
+  };
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatHistory]);
+
+  const getTrendColor = (trend: string) => {
+    switch (trend) {
+      case 'Bullish': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+      case 'Bearish': return 'text-brand-red-bright bg-brand-red-bright/10 border-brand-red-bright/20';
+      default: return 'text-amber-400 bg-amber-400/10 border-amber-400/20';
+    }
+  };
+
+  const getSuggestionColor = (suggestion: string) => {
+    switch (suggestion) {
+      case 'Strong Buy': return 'bg-emerald-600 text-white';
+      case 'Buy': return 'bg-emerald-500 text-white';
+      case 'Hold': return 'bg-amber-500 text-white';
+      case 'Avoid': return 'bg-brand-red-dark text-white';
+      default: return 'bg-slate-700 text-white';
+    }
+  };
+
+  // --- Render Helpers ---
+
+  if (view === 'WELCOME') return <WelcomeScreen onNext={handleWelcomeNext} />;
+  if (view === 'AUTH') return <AuthScreen onAuth={handleAuth} />;
+
+  return (
+    <div className="min-h-screen bg-brand-black text-white font-sans selection:bg-brand-red-bright/30 flex">
+      {/* Sidebar Navigation */}
+      <aside className="w-20 md:w-64 bg-brand-dark border-r border-white/5 flex flex-col py-8 shrink-0">
+        <div className="px-6 mb-12 hidden md:block">
+          <div className="leo-brand scale-50 origin-left">
+            <span className="char-s">S</span>tockWise <span className="char-a">A</span>I
+          </div>
+        </div>
+        <div className="flex items-center justify-center md:hidden mb-12">
+          <div className="w-10 h-10 bg-brand-red-dark/20 rounded-xl flex items-center justify-center text-brand-red-bright">
+            <Zap className="w-6 h-6" />
+          </div>
+        </div>
+
+        <nav className="flex-1 px-4 space-y-2">
+          {[
+            { id: 'SEARCH', label: 'Dashboard', icon: Activity },
+            { id: 'WATCHLIST', label: 'Watchlist', icon: Star },
+            { id: 'SETTINGS', label: 'Settings', icon: Settings },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setTab(item.id as DashboardTab)}
+              className={cn(
+                "w-full flex items-center gap-4 px-4 py-4 rounded-2xl transition-all group",
+                tab === item.id 
+                  ? "bg-brand-red-dark/10 text-brand-red-bright" 
+                  : "text-slate-500 hover:bg-white/5 hover:text-white"
+              )}
+            >
+              <item.icon className={cn("w-6 h-6 shrink-0", tab === item.id ? "text-brand-red-bright" : "group-hover:text-white")} />
+              <span className="hidden md:block font-bold text-sm tracking-wide">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="px-4 mt-auto">
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-slate-500 hover:bg-brand-red-dark/10 hover:text-brand-red-bright transition-all group"
+          >
+            <LogOut className="w-6 h-6 shrink-0" />
+            <span className="hidden md:block font-bold text-sm tracking-wide">Logout</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 h-screen overflow-y-auto custom-scrollbar">
+        <div className="max-w-6xl mx-auto p-6 md:p-10">
+          <AnimatePresence mode="wait">
+            {tab === 'SEARCH' && (
+              <motion.div 
+                key="search"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                className="space-y-12"
+              >
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div>
+                    <h1 className="text-3xl font-display font-bold mb-2">Market Intelligence</h1>
+                    <p className="text-brand-grey-light text-sm">Real-time AI analysis for global and Indian markets.</p>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex -space-x-2">
+                      {[1, 2, 3].map(i => (
+                        <img key={i} src={`https://picsum.photos/seed/${i}/40/40`} className="w-10 h-10 rounded-full border-2 border-brand-black" referrerPolicy="no-referrer" />
+                      ))}
+                    </div>
+                    <div className="text-xs">
+                      <div className="font-bold text-white">12.4k Active</div>
+                      <div className="text-slate-500">Traders Online</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Market Overview & Top Picks */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* Market Overview */}
+                  <div className="lg:col-span-2 bg-brand-dark p-8 rounded-[2rem] border border-white/5">
+                    <div className="flex items-center justify-between mb-8">
+                      <div className="flex items-center gap-3">
+                        <Globe className="w-5 h-5 text-brand-red-bright" />
+                        <h3 className="text-xl font-display font-bold">Market Overview</h3>
+                      </div>
+                      <button onClick={fetchDashboardData} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                        <RefreshCw className={cn("w-4 h-4 text-slate-500", fetchingDashboard && "animate-spin")} />
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {marketIndices.map((index, i) => (
+                        <div key={i} className="bg-brand-black/40 p-5 rounded-2xl border border-white/5">
+                          <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">{index.name}</div>
+                          <div className="text-xl font-black mb-1">{index.value.toLocaleString()}</div>
+                          <div className={cn("text-xs font-bold", index.change >= 0 ? "text-emerald-400" : "text-brand-red-bright")}>
+                            {index.change >= 0 ? '+' : ''}{index.change} ({index.changePercent}%)
+                          </div>
+                        </div>
+                      ))}
+                      {marketIndices.length === 0 && !fetchingDashboard && (
+                        <div className="col-span-full text-center py-4 text-slate-600 text-xs uppercase tracking-widest">No market data available</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Top Picks */}
+                  <div className="bg-brand-dark p-8 rounded-[2rem] border border-white/5">
+                    <div className="flex items-center gap-3 mb-8">
+                      <Target className="w-5 h-5 text-brand-red-bright" />
+                      <h3 className="text-xl font-display font-bold">Top AI Stocks Today</h3>
+                    </div>
+                    <div className="space-y-4">
+                      {topPicks.map((pick, i) => (
+                        <div key={i} className="flex items-center justify-between p-4 bg-brand-black/40 rounded-2xl border border-white/5 hover:border-brand-red-bright/30 transition-all cursor-pointer group" onClick={() => handleSearch(undefined, pick.symbol)}>
+                          <div>
+                            <div className="text-sm font-bold text-white group-hover:text-brand-red-bright transition-colors">{pick.symbol}</div>
+                            <div className="text-[10px] text-slate-500 uppercase tracking-widest">{pick.name}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs font-bold text-emerald-400">{pick.healthScore}%</div>
+                            <div className="text-[8px] text-slate-600 uppercase tracking-widest">{pick.suggestion}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sector Strength */}
+                <div className="bg-brand-dark p-8 rounded-[2rem] border border-white/5">
+                  <div className="flex items-center gap-3 mb-8">
+                    <PieChart className="w-5 h-5 text-brand-red-bright" />
+                    <h3 className="text-xl font-display font-bold">Sector Strength</h3>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                    {sectors.map((sector, i) => (
+                      <div key={i} className="text-center p-6 bg-brand-black/40 rounded-2xl border border-white/5">
+                        <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-3">{sector.name}</div>
+                        <div className={cn(
+                          "text-sm font-black uppercase tracking-widest",
+                          sector.strength === 'Strong' || sector.strength === 'Bullish' ? "text-emerald-400" : 
+                          sector.strength === 'Weak' || sector.strength === 'Bearish' ? "text-brand-red-bright" : "text-amber-400"
+                        )}>
+                          {sector.strength}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Search Bar */}
+                <div className="space-y-6">
+                  <div className="relative group max-w-2xl">
+                    <div className="absolute -inset-1 bg-brand-red-bright/20 rounded-2xl blur opacity-0 group-focus-within:opacity-100 transition duration-500"></div>
+                    <form onSubmit={handleSearch} className="relative flex items-center bg-brand-dark border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+                      <Search className="ml-5 w-6 h-6 text-slate-500 group-focus-within:text-brand-red-bright transition-colors" />
+                      <input
+                        type="text"
+                        value={symbol}
+                        onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+                        placeholder="Search any stock (Example: TCS.NS, RELIANCE.NS, AAPL, TSLA)"
+                        className="w-full h-16 px-5 bg-transparent outline-none text-lg font-medium text-white placeholder:text-slate-600"
+                      />
+                      <button
+                        type="submit"
+                        disabled={loading || !symbol}
+                        className="mr-2 px-8 h-12 red-gradient text-white rounded-xl font-display font-bold uppercase tracking-widest text-[10px] hover:brightness-110 disabled:opacity-50 transition-all flex items-center gap-2 glow-red"
+                      >
+                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Analyze'}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Quick Stock Examples */}
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Popular Stocks:</span>
+                      {['TCS.NS', 'RELIANCE.NS', 'INFY.NS', 'ITC.NS', 'HDFCBANK.NS'].map(s => (
+                        <button 
+                          key={s} 
+                          onClick={() => handleSearch(undefined, s)}
+                          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold text-slate-400 hover:text-brand-red-bright hover:border-brand-red-bright/50 transition-all"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Global Stocks:</span>
+                      {['AAPL', 'TSLA', 'MSFT', 'AMZN', 'GOOGL'].map(s => (
+                        <button 
+                          key={s} 
+                          onClick={() => handleSearch(undefined, s)}
+                          className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold text-slate-400 hover:text-brand-red-bright hover:border-brand-red-bright/50 transition-all"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Loading State */}
+                {loading && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="bg-brand-dark p-10 md:p-16 rounded-[2.5rem] border border-brand-red-bright/30 shadow-2xl glow-red text-center relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-brand-red-bright to-transparent animate-pulse"></div>
+                    <div className="flex items-center justify-center gap-4 mb-10">
+                      <motion.div animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} className="w-3 h-3 rounded-full bg-brand-red-bright shadow-[0_0_12px_rgba(255,59,59,1)]" />
+                      <h3 className="text-xl md:text-2xl font-display font-bold text-white">StockWise AI is analyzing your stock...</h3>
+                    </div>
+                    <div className="space-y-6 text-left max-w-sm mx-auto">
+                      {['Fetching market data', 'Calculating technical indicators', 'Running AI analysis'].map((text, i) => (
+                        <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.3 }} className="flex items-center gap-5 text-brand-grey-light">
+                          <span className="text-2xl">{['📡', '📈', '🤖'][i]}</span>
+                          <span className="text-xs md:text-sm font-bold uppercase tracking-[0.2em]">{text}</span>
+                          <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.3, 1, 0.3] }} transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.5 }} className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-red-bright" />
+                        </motion.div>
+                      ))}
+                    </div>
+                    <motion.div animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2, repeat: Infinity }} className="mt-16 text-brand-red-bright font-display text-[10px] font-bold uppercase tracking-[0.6em]">⏳ Please wait...</motion.div>
+                  </motion.div>
+                )}
+
+                {/* Results */}
+                <div id="results">
+                  {analysis && !loading && (
+                    <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+                      {/* Main Card */}
+                      <div className="bg-brand-dark rounded-[2.5rem] p-8 md:p-12 border border-brand-red-bright/30 relative overflow-hidden shadow-2xl glow-red">
+                        <div className="absolute top-0 right-0 p-12 opacity-[0.02] pointer-events-none">
+                          <Activity className="w-96 h-96" />
+                        </div>
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 relative z-10">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-4 mb-8">
+                              <h2 className="text-3xl md:text-5xl font-display font-black text-white tracking-tighter">{analysis.stockName}</h2>
+                              <button 
+                                onClick={() => toggleWatchlist(symbol)}
+                                className={cn(
+                                  "p-3 rounded-xl border transition-all",
+                                  watchlist.includes(symbol) ? "bg-brand-red-bright/20 border-brand-red-bright text-brand-red-bright" : "bg-white/5 border-white/10 text-slate-500 hover:text-white"
+                                )}
+                              >
+                                <Star className={cn("w-5 h-5", watchlist.includes(symbol) && "fill-current")} />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-6 mb-8">
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-widest">Trend</span>
+                                <div className={cn("px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 border w-fit", getTrendColor(analysis.marketTrend))}>
+                                  {analysis.marketTrend === 'Bullish' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                                  {analysis.marketTrend}
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-widest">Risk</span>
+                                <div className="px-4 py-2 bg-white/5 border border-white/10 text-white rounded-xl text-sm font-bold flex items-center gap-2 w-fit">
+                                  <Shield className="w-4 h-4 text-brand-red-bright" />
+                                  {analysis.riskLevel}
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-widest">RSI</span>
+                                <div className="text-white font-bold text-lg">{analysis.rsiExplanation}</div>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-widest">MA Signal</span>
+                                <div className="text-white font-bold text-lg">{analysis.movingAverageSignal}</div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex flex-col justify-center items-center lg:items-end gap-10">
+                            <div className="text-center lg:text-right">
+                              <div className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-[0.3em] mb-4">Health Score</div>
+                              <div className="text-7xl md:text-8xl font-display font-black text-white leading-none">{analysis.healthScore}<span className="text-2xl text-brand-red-bright">/100</span></div>
+                            </div>
+                            <div className={cn("w-full max-w-xs py-4 rounded-2xl font-display font-bold text-sm text-center uppercase tracking-[0.2em] shadow-xl glow-red-strong", getSuggestionColor(analysis.finalSuggestion))}>
+                              {analysis.finalSuggestion}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Chart Section */}
+                      <div className="chart-container">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+                          <div className="flex items-center gap-4">
+                            <div className="p-3 bg-brand-red-dark/10 rounded-xl">
+                              <LineChart className="w-6 h-6 text-brand-red-bright" />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-display font-bold">Stock Price Chart</h3>
+                              <div className="flex items-center gap-4 mt-1">
+                                <div className="text-2xl font-black text-white">
+                                  ₹{analysis.currentPrice.toLocaleString()}
+                                </div>
+                                <div className={cn(
+                                  "text-sm font-bold flex items-center gap-1",
+                                  analysis.dayChange >= 0 ? "text-emerald-400" : "text-brand-red-bright"
+                                )}>
+                                  {analysis.dayChange >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                                  {analysis.dayChange >= 0 ? '+' : ''}{analysis.dayChange} ({analysis.dayChangePercent}%)
+                                </div>
+                                <div className={cn(
+                                  "px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border",
+                                  getTrendColor(analysis.marketTrend)
+                                )}>
+                                  {analysis.marketTrend}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex bg-brand-black p-1 rounded-xl border border-white/5 self-start md:self-center">
+                            {['1D', '1W', '1M', '6M', '1Y'].map(tf => (
+                              <button
+                                key={tf}
+                                onClick={() => handleTimeframeChange(tf)}
+                                className={cn(
+                                  "px-4 py-2 rounded-lg text-xs font-bold transition-all",
+                                  timeframe === tf ? "bg-brand-red-dark text-white shadow-lg" : "text-slate-500 hover:text-white"
+                                )}
+                              >
+                                {tf}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="h-[400px] w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={chartData}>
+                              <defs>
+                                <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor="#ff3b3b" stopOpacity={0.3}/>
+                                  <stop offset="95%" stopColor="#ff3b3b" stopOpacity={0}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#1f1f1f" vertical={false} />
+                              <XAxis dataKey="date" stroke="#4a4a4a" fontSize={10} tickLine={false} axisLine={false} />
+                              <YAxis hide domain={['auto', 'auto']} />
+                              <Tooltip 
+                                contentStyle={{ backgroundColor: '#161616', border: '1px solid rgba(255,59,59,0.2)', borderRadius: '12px' }}
+                                itemStyle={{ color: '#ff3b3b', fontWeight: 'bold' }}
+                                labelStyle={{ color: '#A0A0A0', marginBottom: '4px' }}
+                              />
+                              <Area type="monotone" dataKey="price" stroke="#ff3b3b" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        </div>
+                      </div>
+
+                      {/* AI Trading Signal */}
+                      <div className="bg-brand-dark rounded-[2.5rem] p-8 md:p-12 border border-brand-red-bright/30 shadow-2xl glow-red relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-12 opacity-[0.05] pointer-events-none">
+                          <Target className="w-64 h-64" />
+                        </div>
+                        <div className="relative z-10">
+                          <div className="flex items-center gap-4 mb-8">
+                            <div className="p-3 bg-brand-red-bright/10 rounded-xl"><Zap className="w-6 h-6 text-brand-red-bright" /></div>
+                            <h3 className="text-2xl font-display font-bold">AI Trading Signal</h3>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+                            <div className="space-y-6">
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-widest">Stock</span>
+                                <div className="text-2xl font-black text-white">{symbol}</div>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-widest">Signal</span>
+                                <div className={cn(
+                                  "px-6 py-3 rounded-2xl text-lg font-black text-center border",
+                                  analysis.aiSignal.signal === 'BUY' ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" :
+                                  analysis.aiSignal.signal === 'SELL' ? "bg-brand-red-bright/20 border-brand-red-bright text-brand-red-bright" :
+                                  "bg-amber-500/20 border-amber-500 text-amber-400"
+                                )}>
+                                  {analysis.aiSignal.signal}
+                                </div>
+                              </div>
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-slate-500 font-display font-bold uppercase tracking-widest">Strength</span>
+                                <div className="text-lg font-bold text-white">{analysis.aiSignal.strength}</div>
+                              </div>
+                            </div>
+
+                            <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-6">
+                              <div className="bg-brand-black/40 p-6 rounded-3xl border border-white/5 flex flex-col justify-center items-center text-center">
+                                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Possible Entry</div>
+                                <div className="text-xl font-black text-white">{analysis.aiSignal.entryZone}</div>
+                              </div>
+                              <div className="bg-brand-black/40 p-6 rounded-3xl border border-white/5 flex flex-col justify-center items-center text-center">
+                                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Target Price</div>
+                                <div className="text-xl font-black text-emerald-400">{analysis.aiSignal.targetPrice}</div>
+                              </div>
+                              <div className="bg-brand-black/40 p-6 rounded-3xl border border-white/5 flex flex-col justify-center items-center text-center">
+                                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-2">Stop Loss</div>
+                                <div className="text-xl font-black text-brand-red-bright">{analysis.aiSignal.stopLoss}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Market Movers & Mood */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* Market Movers */}
+                        <div className="bg-brand-dark p-8 rounded-[2.5rem] border border-white/5 red-border-glow transition-all">
+                          <div className="flex items-center gap-3 mb-8">
+                            <TrendingUp className="w-5 h-5 text-brand-red-bright" />
+                            <h3 className="text-xl font-display font-bold">Market Movers Today</h3>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                            <div className="space-y-4">
+                              <div className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest flex items-center gap-2">
+                                <TrendingUp className="w-3 h-3" /> Top Gainers
+                              </div>
+                              {marketMovers?.topGainers.map((stock, i) => (
+                                <div key={i} className="flex items-center justify-between p-4 bg-brand-black/40 rounded-2xl border border-white/5 hover:border-emerald-500/30 transition-all cursor-pointer" onClick={() => handleSearch(undefined, stock.symbol)}>
+                                  <span className="text-sm font-bold">{stock.symbol}</span>
+                                  <span className="text-xs font-bold text-emerald-400">+{stock.changePercent}%</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="space-y-4">
+                              <div className="text-[10px] font-bold text-brand-red-bright uppercase tracking-widest flex items-center gap-2">
+                                <TrendingDown className="w-3 h-3" /> Top Losers
+                              </div>
+                              {marketMovers?.topLosers.map((stock, i) => (
+                                <div key={i} className="flex items-center justify-between p-4 bg-brand-black/40 rounded-2xl border border-white/5 hover:border-brand-red-bright/30 transition-all cursor-pointer" onClick={() => handleSearch(undefined, stock.symbol)}>
+                                  <span className="text-sm font-bold">{stock.symbol}</span>
+                                  <span className="text-xs font-bold text-brand-red-bright">-{stock.changePercent}%</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Market Mood */}
+                        <div className="bg-brand-dark p-8 rounded-[2.5rem] border border-white/5 red-border-glow transition-all">
+                          <div className="flex items-center gap-3 mb-8">
+                            <Heart className="w-5 h-5 text-brand-red-bright" />
+                            <h3 className="text-xl font-display font-bold">Market Mood</h3>
+                          </div>
+
+                          <div className="space-y-6">
+                            <div className="flex items-center justify-between p-5 bg-brand-black/40 rounded-2xl border border-white/5">
+                              <div className="text-sm font-bold text-slate-400">NIFTY Trend</div>
+                              <div className={cn(
+                                "flex items-center gap-2 text-sm font-black uppercase tracking-widest",
+                                marketMood?.sentiment === 'Bullish' ? "text-emerald-400" : 
+                                marketMood?.sentiment === 'Bearish' ? "text-brand-red-bright" : "text-amber-400"
+                              )}>
+                                <div className={cn(
+                                  "w-2 h-2 rounded-full",
+                                  marketMood?.sentiment === 'Bullish' ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,1)]" : 
+                                  marketMood?.sentiment === 'Bearish' ? "bg-brand-red-bright shadow-[0_0_8px_rgba(255,59,59,1)]" : "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,1)]"
+                                )} />
+                                {marketMood?.niftyTrend}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between p-5 bg-brand-black/40 rounded-2xl border border-white/5">
+                              <div className="text-sm font-bold text-slate-400">Investor Sentiment</div>
+                              <div className={cn(
+                                "text-sm font-black uppercase tracking-widest",
+                                marketMood?.sentiment === 'Bullish' ? "text-emerald-400" : 
+                                marketMood?.sentiment === 'Bearish' ? "text-brand-red-bright" : "text-amber-400"
+                              )}>
+                                {marketMood?.sentiment}
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between p-5 bg-brand-black/40 rounded-2xl border border-white/5">
+                              <div className="text-sm font-bold text-slate-400">Volatility Level</div>
+                              <div className="text-sm font-black text-white uppercase tracking-widest">
+                                {marketMood?.volatility}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* AI Assistant */}
+                      <div className="bg-brand-dark rounded-[2.5rem] p-8 md:p-12 border border-white/5 relative overflow-hidden">
+                        <div className="max-w-3xl mx-auto relative z-10">
+                          <div className="flex items-center justify-between mb-8">
+                            <div className="flex items-center gap-4">
+                              <div className="p-3 bg-brand-red-bright/10 rounded-xl"><MessageSquare className="w-6 h-6 text-brand-red-bright" /></div>
+                              <h3 className="text-2xl font-display font-bold">Ask StockWise AI</h3>
+                            </div>
+                            {chatHistory.length > 0 && (
+                              <button 
+                                onClick={clearChat}
+                                className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-brand-red-bright/10 text-slate-500 hover:text-brand-red-bright rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all"
+                              >
+                                <Trash2 className="w-3 h-3" /> Clear Chat
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="space-y-6 mb-8 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
+                            {chatHistory.length === 0 ? (
+                              <div className="text-center py-12">
+                                <Sparkles className="w-12 h-12 text-slate-800 mx-auto mb-4" />
+                                <p className="text-slate-600 text-sm">Ask me anything about stocks, trends, or investment strategies.</p>
+                              </div>
+                            ) : (
+                              chatHistory.map((msg, i) => (
+                                <motion.div 
+                                  key={i}
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className={cn(
+                                    "flex items-start gap-4",
+                                    msg.role === 'user' ? "flex-row-reverse" : "flex-row"
+                                  )}
+                                >
+                                  <div className={cn(
+                                    "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1",
+                                    msg.role === 'user' ? "bg-slate-700" : "bg-brand-red-bright"
+                                  )}>
+                                    {msg.role === 'user' ? <User className="w-4 h-4 text-white" /> : <Zap className="w-4 h-4 text-white" />}
+                                  </div>
+                                  <div className={cn(
+                                    "p-4 rounded-2xl max-w-[80%] text-sm leading-relaxed whitespace-pre-wrap",
+                                    msg.role === 'user' 
+                                      ? "bg-white/5 text-white rounded-tr-none" 
+                                      : "bg-brand-red-bright/10 border border-brand-red-bright/20 text-brand-grey-light rounded-tl-none"
+                                  )}>
+                                    {msg.content}
+                                  </div>
+                                </motion.div>
+                              ))
+                            )}
+                            {asking && (
+                              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-3 text-slate-600">
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span className="text-[10px] font-bold uppercase tracking-widest">AI is thinking...</span>
+                              </motion.div>
+                            )}
+                            <div ref={chatEndRef} />
+                          </div>
+
+                          <form onSubmit={handleAskAI} className="relative">
+                            <input
+                              ref={chatInputRef}
+                              type="text"
+                              value={question}
+                              onChange={(e) => setQuestion(e.target.value)}
+                              placeholder="Is this stock good for long term investment?"
+                              className="w-full h-16 px-6 bg-brand-black/50 border border-white/10 rounded-2xl outline-none focus:border-brand-red-bright/50 transition-all text-white pr-32"
+                            />
+                            <button type="submit" disabled={asking || !question.trim()} className="absolute right-2 top-2 bottom-2 px-6 bg-brand-red-dark hover:bg-brand-red-bright text-white rounded-xl font-display font-bold text-[10px] uppercase tracking-widest transition-all disabled:opacity-50">
+                              {asking ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send Message'}
+                            </button>
+                          </form>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {tab === 'WATCHLIST' && (
+              <motion.div 
+                key="watchlist"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-8"
+              >
+                <div className="flex items-center justify-between">
+                  <h2 className="text-3xl font-display font-bold">My Watchlist</h2>
+                  <div className="text-slate-500 text-sm font-bold uppercase tracking-widest">{watchlist.length} Stocks Saved</div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {watchlist.length === 0 ? (
+                    <div className="col-span-full py-24 text-center bg-brand-dark/50 rounded-[2.5rem] border-2 border-dashed border-white/5">
+                      <Star className="w-12 h-12 text-slate-800 mx-auto mb-4" />
+                      <p className="text-slate-600">Your watchlist is empty. Start adding stocks to track them.</p>
+                    </div>
+                  ) : (
+                    watchlist.map(s => (
+                      <motion.div 
+                        key={s}
+                        layoutId={s}
+                        className="bg-brand-dark p-6 rounded-3xl border border-white/5 hover:border-brand-red-bright/30 transition-all group relative overflow-hidden"
+                      >
+                        <div className="flex items-center justify-between mb-6">
+                          <div className="w-12 h-12 bg-brand-red-dark/10 rounded-xl flex items-center justify-center text-brand-red-bright font-bold">
+                            {s.charAt(0)}
+                          </div>
+                          <button onClick={() => toggleWatchlist(s)} className="text-slate-600 hover:text-brand-red-bright transition-colors">
+                            <X className="w-5 h-5" />
+                          </button>
+                        </div>
+                        <h3 className="text-xl font-display font-bold mb-1">{s}</h3>
+                        <p className="text-slate-500 text-xs mb-6 uppercase tracking-widest">Global Asset</p>
+                        <button 
+                          onClick={() => { setTab('SEARCH'); handleSearch(undefined, s); }}
+                          className="w-full py-3 bg-white/5 hover:bg-brand-red-dark text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all"
+                        >
+                          View Analysis
+                        </button>
+                      </motion.div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+
+            {tab === 'SETTINGS' && user && (
+              <motion.div 
+                key="settings"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+                className="space-y-12"
+              >
+                <h2 className="text-3xl font-display font-bold">Settings Dashboard</h2>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  {/* Profile Settings */}
+                  <div className="bg-brand-dark p-8 rounded-[2rem] border border-white/5 space-y-8">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-brand-red-dark/10 rounded-xl"><User className="w-6 h-6 text-brand-red-bright" /></div>
+                      <h3 className="text-xl font-display font-bold">Profile Settings</h3>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Full Name</label>
+                        <input type="text" defaultValue={user.name} className="w-full h-12 px-4 bg-brand-black border border-white/10 rounded-xl outline-none text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">Email Address</label>
+                        <input type="email" readOnly value={user.email} className="w-full h-12 px-4 bg-brand-black border border-white/10 rounded-xl outline-none text-sm opacity-50" />
+                      </div>
+                      <button className="text-xs text-brand-red-bright font-bold uppercase tracking-widest hover:underline">Change Password</button>
+                    </div>
+                  </div>
+
+                  {/* App Settings */}
+                  <div className="bg-brand-dark p-8 rounded-[2rem] border border-white/5 space-y-8">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-brand-red-dark/10 rounded-xl"><Smartphone className="w-6 h-6 text-brand-red-bright" /></div>
+                      <h3 className="text-xl font-display font-bold">App Settings</h3>
+                    </div>
+                    <div className="space-y-6">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {user.theme === 'dark' ? <Moon className="w-5 h-5 text-slate-500" /> : <Sun className="w-5 h-5 text-amber-500" />}
+                          <div className="text-sm font-bold">{user.theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            const newTheme = (user.theme === 'dark' ? 'light' : 'dark') as 'light' | 'dark';
+                            const newUser: UserSettings = { ...user, theme: newTheme };
+                            setUser(newUser);
+                            localStorage.setItem('stockwise_user', JSON.stringify(newUser));
+                          }}
+                          className={cn(
+                            "w-12 h-6 rounded-full relative transition-all",
+                            user.theme === 'dark' ? "bg-brand-red-dark" : "bg-slate-700"
+                          )}
+                        >
+                          <div className={cn(
+                            "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                            user.theme === 'dark' ? "right-1" : "left-1"
+                          )} />
+                        </button>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-center gap-3">
+                          <Languages className="w-5 h-5 text-slate-500" />
+                          <div className="text-sm font-bold">Language</div>
+                        </div>
+                        <select 
+                          value={user.language}
+                          onChange={(e) => {
+                            const newUser = { ...user, language: e.target.value };
+                            setUser(newUser);
+                            localStorage.setItem('stockwise_user', JSON.stringify(newUser));
+                          }}
+                          className="w-full h-12 px-4 bg-brand-black border border-white/10 rounded-xl outline-none text-xs text-white appearance-none cursor-pointer"
+                        >
+                          {[
+                            'English', 'Tamil', 'Tanglish', 'Hindi', 'Malayalam', 'Telugu', 'Kannada', 
+                            'French', 'German', 'Spanish', 'Arabic', 'Chinese', 'Japanese', 
+                            'Korean', 'Portuguese', 'Italian', 'Russian', 'Indonesian', 
+                            'Thai', 'Turkish', 'Vietnamese'
+                          ].map(lang => (
+                            <option key={lang} value={lang}>{lang}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Bell className="w-5 h-5 text-slate-500" />
+                          <div className="text-sm font-bold">Notifications</div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            const newUser = { ...user, notifications: !user.notifications };
+                            setUser(newUser);
+                            localStorage.setItem('stockwise_user', JSON.stringify(newUser));
+                          }}
+                          className={cn(
+                            "w-12 h-6 rounded-full relative transition-all",
+                            user.notifications ? "bg-brand-red-dark" : "bg-white/10"
+                          )}
+                        >
+                          <div className={cn(
+                            "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                            user.notifications ? "right-1" : "left-1"
+                          )} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Account Settings */}
+                  <div className="bg-brand-dark p-8 rounded-[2rem] border border-white/5 space-y-8">
+                    <div className="flex items-center gap-4">
+                      <div className="p-3 bg-brand-red-dark/10 rounded-xl"><Settings className="w-6 h-6 text-brand-red-bright" /></div>
+                      <h3 className="text-xl font-display font-bold">Account Management</h3>
+                    </div>
+                    <div className="space-y-4">
+                      <button onClick={handleLogout} className="w-full py-4 bg-white/5 hover:bg-brand-red-dark/10 text-white rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-3">
+                        <LogOut className="w-4 h-4" /> Logout Session
+                      </button>
+                      <button className="w-full py-4 bg-brand-red-dark/5 hover:bg-brand-red-dark/20 text-brand-red-bright rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-3">
+                        <Trash2 className="w-4 h-4" /> Delete Account
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Disclaimer */}
+          <footer className="mt-24 pt-12 border-t border-white/5 text-center">
+            <p className="text-slate-700 text-[10px] max-w-2xl mx-auto leading-relaxed uppercase tracking-widest">
+              This platform provides stock analysis for educational purposes only and is not financial advice.
+            </p>
+          </footer>
+        </div>
+      </main>
+    </div>
+  );
+}
